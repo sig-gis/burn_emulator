@@ -1,0 +1,14 @@
+dataset:
+    "class_path": burn_emulator.datasets.IgnitionDataset
+    "init_args":
+        ignitions_path: /mnt/data/dschmidt/cbp_approx_poc/training_data_v7/legalmax/modeled_CBP/legalmax
+        fuels_paths:
+            -  /mnt/data/dschmidt/cbp_approx_poc/legalmax_legalmax_FF_20260624
+        burn_paths:
+            -  /mnt/data/dschmidt/cbp_approx_poc/training_data_v7/legalmax/legalmax
+        topo_path: /mnt/data/dschmidt/cbp_approx_poc/topo
+        stats_path: /mnt/data/mtruong/burn_emulator/data/stats.yaml
+        chip_size: 256
+        jitter: null
+        ignition_only: true
+test_name: legalmax
