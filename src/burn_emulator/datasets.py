@@ -116,7 +116,7 @@ class IgnitionDataset(Dataset):
         # burns are not necessary for inference
         if not self.ignition_only:
             arrY = []
-            igd = burn_path / str(ignition['ignition_number'].item())
+            igd = burn_path / str(int(ignition['ignition_number'].item()))
             if self.burn_times:
                 bps = [igd / bt / "fire_type.tif" for bt in self.burn_times]
             else:

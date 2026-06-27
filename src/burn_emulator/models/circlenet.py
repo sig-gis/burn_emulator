@@ -245,15 +245,15 @@ class CircleNet(nn.Module):
         self.bilinear: bool = bilinear
 
         self.inc = DoubleCircleConv(n_channels, 64)
-        self.down1 = Down(64, 128)
-        self.down2 = Down(128, 256)
-        self.down3 = Down(256, 512)
+        self.down1 = CircleDown(64, 128)
+        self.down2 = CircleDown(128, 256)
+        self.down3 = CircleDown(256, 512)
         factor: int = 2 if bilinear else 1
-        self.down4 = Down(512, 1024 // factor)
-        self.up1 = Up(1024, 512 // factor, bilinear)
-        self.up2 = Up(512, 256 // factor, bilinear)
-        self.up3 = Up(256, 128 // factor, bilinear)
-        self.up4 = Up(128, 64, bilinear)
+        self.down4 = CircleDown(512, 1024 // factor)
+        self.up1 = CircleUp(1024, 512 // factor, bilinear)
+        self.up2 = CircleUp(512, 256 // factor, bilinear)
+        self.up3 = CircleUp(256, 128 // factor, bilinear)
+        self.up4 = CircleUp(128, 64, bilinear)
         self.outc = OutConv(64, n_outputs)
 
     def forward(self, x: Tensor) -> Tensor:

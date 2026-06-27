@@ -15,7 +15,7 @@ echo "Job started on $(hostname) at $(date)"
 echo "Job ID: $SLURM_JOB_ID, Array Task ID: $SLURM_ARRAY_TASK_ID"
 
 source $HOME/.bashrc
-cd /mnt/data/mtruong/burn_emulator/logs
+cd /mnt/data/mtruong/burn_emulator
 source /mnt/data/mtruong/burn_emulator/.venv/bin/activate
 
 CONFIG_DIR=/mnt/data/mtruong/burn_emulator/data/configs
