@@ -331,8 +331,27 @@ if __name__ == '__main__':
             pred = model(image)
     if torch.cuda.is_available():
         torch.cuda.synchronize()
-    elapsed = (time.perf_counter() - t0) / N_RUNS
-    print(f"\nForward pass : {elapsed*1000:.1f} ms  (mean over {N_RUNS} runs)")
+    t1 = time.perf_counter()
+    
+    if torch.cuda.is_available():
+        peak      = torch.cuda.max_memory_allocated(device) / 1024**3
+        reserved  = torch.cuda.memory_reserved(device) / 1024**3
+        total_mem = torch.cuda.get_device_properties(device).total_memory / 1024**3
+
+        print(f"\nMemory (GiB):")
+        print(f"  peak      : {peak:.2f}")
+        print(f"  reserved  : {reserved:.2f}")
+        print(f"  total     : {total_mem:.2f}")
+        print(f"  headroom  : {total_mem - peak:.2f}")
+
+        assert peak < 0.9 * total_mem, (
+            f"Peak memory {peak:.2f} GiB exceeds 90% of device total {total_mem:.2f} GiB"
+        )
+    else:
+        print("\nMemory check skipped (CPU)")
+        
+    elapsed = (t1 - t0) / N_RUNS
+    print(f"\nForward pass : {elapsed*1000:.1f} ms  (mean over {N_RUNS} runs for batch size = {B})")
 
     print(f"Input  : ({B}, {C_in}, {GRID}, {GRID})")
     print(f"Output : {tuple(pred.shape)}")

@@ -35,8 +35,8 @@ DATA_CONFIGS=(
 )
 
 TEST_CONFIGS=(
-    "baseline"
-    "legalmax"
+    "baseline_test"
+    "legalmax_test"
 )
 
 MID=$(( SLURM_ARRAY_TASK_ID % 2 ))
@@ -61,7 +61,10 @@ if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     MONITOR_PID=$!
 fi
 
-burn_emulator -m test -c "$CONFIG_DIR/$DATA_CFG/$MODEL_CFG.yaml" -c "$CONFIG_DIR/$DATA_CFG/train.yaml" -c "$CONFIG_DIR/$TEST_CFG.yaml"
+burn_emulator -m test \
+    -c "$CONFIG_DIR/$DATA_CFG/$MODEL_CFG.yaml" \
+    -c "$CONFIG_DIR/$DATA_CFG/$TEST_CFG.yaml" \
+    -c "$CONFIG_DIR/$DATA_CFG/test.yaml"
 
 if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     kill $MONITOR_PID 2>/dev/null

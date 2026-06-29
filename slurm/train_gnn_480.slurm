@@ -30,7 +30,9 @@ CONFIG_DIR=/mnt/data/mtruong/burn_emulator/data/configs
 MONITOR_PID=$!
 
 
-burn_emulator -m train -c "$CONFIG_DIR/basemax_480/gnn.yaml" -c "$CONFIG_DIR/basemax_480/train.yaml"
+burn_emulator -m train \
+    -c "$CONFIG_DIR/basemax_480/gnn.yaml" \
+    -c "$CONFIG_DIR/basemax_480/train.yaml"
 
 kill $MONITOR_PID 2>/dev/null
 

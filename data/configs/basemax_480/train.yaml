@@ -1,6 +1,6 @@
 dataset:
-    "class_path": burn_emulator.datasets.IgnitionDataset
-    "init_args":
+    class_path: burn_emulator.datasets.IgnitionDataset
+    init_args:
         ignitions_path: /mnt/data/dschmidt/cbp_approx_poc/training_data_v8/legalmax/ignition_locations.csv
         fuels_paths:
             -  /mnt/data/dschmidt/cbp_approx_poc/legalmax_baseline_FF_20260624
@@ -15,18 +15,18 @@ dataset:
         jitter: null
         ignition_only: false
 dataloader:
-    "class_path": torch.utils.data.DataLoader
-    "init_args":
+    class_path: torch.utils.data.DataLoader
+    init_args:
         batch_size: 16
         # batch_size: 32
         shuffle: true
         pin_memory: false
         drop_last: true
 optimizer:
-    "class_path": torch.optim.AdamW
-    "init_args":
+    class_path: torch.optim.AdamW
+    init_args:
         lr: .0001
 criterion:
-    "class_path": torch.nn.BCEWithLogitsLoss
-    "init_args": {}
+    class_path: torch.nn.BCEWithLogitsLoss
+    init_args: {}
 num_epochs: 128

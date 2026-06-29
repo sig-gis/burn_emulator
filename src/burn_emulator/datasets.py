@@ -20,7 +20,7 @@ class IgnitionDataset(Dataset):
         burn_paths: list[Path],
         topo_path: list[Path],
         stats_path: Path,
-        burn_times: int = [480],
+        burn_times: list[int],
         chip_size: int = 256,
         jitter: Optional[int] = None,
         ignition_only: bool = False,

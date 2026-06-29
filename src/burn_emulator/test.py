@@ -1,4 +1,7 @@
+import numpy as np
+import pandas as pd
 import rasterio
+import time
 import torch
 import torch.nn.functional as F
 
@@ -7,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from torch.utils.data import DataLoader
 
-from burn_emulator.constants import DTYPE, INF_PROFILE, NO_DATA, OUTDIR
+from burn_emulator.constants import DTYPE, INF_PROFILE, OUTDIR
 from burn_emulator.utils import dynamic_import
 
 
@@ -25,7 +28,7 @@ def _unpack_sample(b: int, diffs: tuple, slices: tuple) -> tuple[int, int, int, 
     h, w = y1 - y0, x1 - x0
     y_start = yd if (yd > 0 and y0 == 0) else 0
     x_start = xd if (xd > 0 and x0 == 0) else 0
-    return y0, y1, x0, x1, y_start, x_start
+    return y0, y1, x0, x1, y_start, x_start, h, w
 
 
 def _accumulate_batch(
@@ -39,8 +42,7 @@ def _accumulate_batch(
     log1m_prod_acc: torch.Tensor,
 ) -> None:
     for b in range(pred.shape[0]):
-        y0, y1, x0, x1, y_start, x_start = _unpack_sample(b, diffs, slices)
-        h, w = y1 - y0, x1 - x0
+        y0, y1, x0, x1, y_start, x_start, h, w = _unpack_sample(b, diffs, slices)
 
         x = pred[b, :, y_start:y_start + h, x_start:x_start + w].double()
         roi = (slice(None), slice(y0, y1), slice(x0, x1))
@@ -85,7 +87,7 @@ def _write_monte_carlo(
 
 
 def _write_batch(
-    pred: "np.ndarray",
+    pred: np.ndarray,
     diffs: tuple,
     slices: tuple,
     idxs: tuple,
@@ -95,11 +97,10 @@ def _write_batch(
     test_name: str,
     outpath: Path,
 ) -> None:
-    sidx, bidx = idxs
+    sidx, _ = idxs
 
     for b in range(pred.shape[0]):
-        y0, y1, x0, x1, y_start, x_start = _unpack_sample(b, diffs, slices)
-        h, w = y1 - y0, x1 - x0
+        y0, y1, x0, x1, y_start, x_start, h, w = _unpack_sample(b, diffs, slices)
 
         canvas = torch.zeros(shape, dtype=torch.float32)
         canvas[:, y0:y1, x0:x1] = torch.from_numpy(pred[b, :, y_start:y_start + h, x_start:x_start + w])
@@ -150,15 +151,23 @@ def test_model(
         odtype = torch.float32
 
     pending: list[Future] = []
-
+    sim_perf_times = []
+    sam_perf_times = [] # does not account for partial batches
+    drn_perf_times = []
+    
+    test_start_time = time.perf_counter()
     with torch.no_grad(), ThreadPoolExecutor(max_workers=max_write_workers) as pool:
-        for sim in range(num_sims):
+        for _ in range(num_sims):
+            sim_start_time = time.perf_counter()
             for X, M, diffs, slices, idxs in test_loader:
                 X = X.to('cuda', dtype=DTYPE)
                 M = M.to('cuda', dtype=DTYPE)
-
+                
+                sam_start_time = time.perf_counter()
                 pred = (F.sigmoid(model(X)) * M).to(odtype)
-
+                sam_end_time = time.perf_counter()
+                sam_perf_times.append(sam_end_time-sam_start_time)
+                
                 if monte_carlo:
                     _accumulate_batch(
                         pred, diffs, slices,
@@ -166,7 +175,11 @@ def test_model(
                         log_prod_acc, log1m_prod_acc,
                     )
                 else:
+                    drn_start_time = time.perf_counter()
                     _drain(pending, limit=max_write_workers)
+                    drn_end_time = time.perf_counter()
+                    drn_perf_times.append(drn_end_time-drn_start_time)
+                    
                     pending.append(pool.submit(
                         _write_batch,
                         pred.cpu().numpy(),
@@ -175,9 +188,9 @@ def test_model(
                         shape, profile.copy(),
                         test_name, outpath,
                     ))
-
+            sim_end_time = time.perf_counter()
+            sim_perf_times.append(sim_end_time-sim_start_time)
         _drain(pending, limit=1)
-
     if monte_carlo:
         mask = test_loader.dataset.masks[fuels_path0.stem].to('cuda')
         _write_monte_carlo(
@@ -185,6 +198,18 @@ def test_model(
             log_prod_acc, log1m_prod_acc,
             mask, test_name, outpath, profile,
         )
+    test_end_time = time.perf_counter()
+    test_perf_time = test_end_time-test_start_time
+    tp = {"model": test_name,
+          "num_batches": len(test_loader),
+          "batch_size": test_loader.batch_size,
+          "max_memory_alloc": np.round(torch.cuda.max_memory_allocated('cuda') / 1024**3, decimals=2),
+          "test_perf_time": np.round(test_perf_time, decimals=2),
+          "sim_perf_time_mu": np.round(np.mean(sim_perf_times), decimals=2).item(),
+          "sam_perf_time_mu": np.round(np.mean(sam_perf_times), decimals=2).item(),
+          "drn_perf_time_mu": np.round(np.mean(drn_perf_times), decimals=2).item()}
+    df = pd.DataFrame([tp])
+    df.to_csv(outpath / 'throughput.csv', mode='a', index=False, header=False)
 
 
 def test(**kwargs: Any) -> None:

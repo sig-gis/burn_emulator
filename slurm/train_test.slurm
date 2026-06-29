@@ -52,7 +52,9 @@ if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     MONITOR_PID=$!
 fi
 
-burn_emulator -m train -c "$CONFIG_DIR/$DATA_CFG/$MODEL_CFG.yaml" -c "$CONFIG_DIR/$DATA_CFG/train.yaml"
+burn_emulator -m train \
+    -c "$CONFIG_DIR/$DATA_CFG/$MODEL_CFG.yaml" \
+    -c "$CONFIG_DIR/$DATA_CFG/train.yaml"
 
 if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     kill $MONITOR_PID 2>/dev/null

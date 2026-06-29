@@ -26,15 +26,17 @@ MODEL_CONFIGS=(
 )
 
 DATA_CONFIGS=(
-    "basemax_480"
-    "basemax_720"
-    "basemax_960"
     "basemax_all"
+    "basemax_2400"
+    "basemax_1920"
+    "basemax_1440"
+    "basemax_960"
+    "basemax_480"
 )
 
 TEST_CONFIGS=(
-    "baseline"
-    "legalmax"
+    "baseline_test"
+    "legalmax_test"
 )
 
 MID=$(( SLURM_ARRAY_TASK_ID % 2 ))
@@ -50,16 +52,19 @@ echo "Using model config: $MODEL_CFG, data config: $DATA_CFG, test config: $TEST
 if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     (
         while true; do
-            free -h > /mnt/data/mtruong/burn_emulator/logs/test_test.out
-            nvidia-smi >> /mnt/data/mtruong/burn_emulator/logs/test_test.out
-            echo "=== $(date) ===" >> /mnt/data/mtruong/burn_emulator/logs/test_test.out
+            free -h > /mnt/data/mtruong/burn_emulator/logs/test_cnns.out
+            nvidia-smi >> /mnt/data/mtruong/burn_emulator/logs/test_cnns.out
+            echo "=== $(date) ===" >> /mnt/data/mtruong/burn_emulator/logs/test_cnns.out
             sleep 60
         done
     ) &
     MONITOR_PID=$!
 fi
 
-burn_emulator -m test -c "$CONFIG_DIR/$DATA_CFG/$MODEL_CFG.yaml" -c "$CONFIG_DIR/$DATA_CFG/train.yaml" -c "$CONFIG_DIR/$TEST_CFG.yaml"
+burn_emulator -m test \
+    -c "$CONFIG_DIR/$DATA_CFG/$MODEL_CFG.yaml" \
+    -c "$CONFIG_DIR/$DATA_CFG/$TEST_CFG.yaml" \
+    -c "$CONFIG_DIR/$DATA_CFG/test.yaml"
 
 if [ "$SLURM_ARRAY_TASK_ID" -eq 0 ]; then
     kill $MONITOR_PID 2>/dev/null
