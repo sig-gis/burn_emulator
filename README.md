@@ -12,7 +12,7 @@ git clone https://github.com/sig-gis/burn_emulator.git
 cd burn_emulator
 
 # assuming you already have uv installed
-uv init
+uv sync
 ```
 ---
 
