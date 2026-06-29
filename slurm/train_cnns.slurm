@@ -5,9 +5,9 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
-#SBATCH --mem=31000
+#SBATCH --mem=10000
 #SBATCH --nodelist=dragon05
-#SBATCH --array=0-7%4
+#SBATCH --array=0-5%6
 
 
 
@@ -27,9 +27,11 @@ MODEL_CONFIGS=(
 
 DATA_CONFIGS=(
     "basemax_all"
-    "basemax_960"
-    "basemax_720"
-    "basemax_480"
+    "basemax_2400"
+    "basemax_1920"
+    #"basemax_1440"
+    #"basemax_960"
+    #"basemax_480"
 )
 
 MID=$(( SLURM_ARRAY_TASK_ID % 2 ))

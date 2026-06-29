@@ -6,7 +6,7 @@ from torch_geometric.nn import MessagePassing
 
 
 def build_radial_graph(
-    grid_size: int = 256,
+    grid_size: int = 128,
     num_rings: int = 64,
     grid_outward: bool = True,
     src_ratio: float = 0.1,
@@ -158,7 +158,7 @@ def batch_edge_index(edge_index: torch.Tensor, N: int, B: int) -> torch.Tensor:
     return ei.permute(1, 0, 2).reshape(2, -1)                 # (2, B*E)
 
 
-def sample_image(image: torch.Tensor, pos: torch.Tensor, grid_size: int = 256):
+def sample_image(image: torch.Tensor, pos: torch.Tensor, grid_size: int = 128):
     B, C, H, W = image.shape
     norm = (pos / (grid_size - 1)) * 2.0 - 1.0
     grid = norm.unsqueeze(0).unsqueeze(0).expand(B, 1, -1, 2)
@@ -337,7 +337,7 @@ class GNNBranch(nn.Module):
 
 
 class PixelDecoder(nn.Module):
-    def __init__(self, hidden_ch: int, grid_size: int = 256, refine_ch: int = 32):
+    def __init__(self, hidden_ch: int, grid_size: int = 128, refine_ch: int = 32):
         super().__init__()
         self.grid_size = grid_size
         self.hidden_ch = hidden_ch
@@ -361,18 +361,18 @@ class RadialGNN(nn.Module):
         self,
         img_channels: int = 19,
         hidden_channels: int = 64,
-        num_layers: tuple = (8, 16, 32),
+        num_layers: tuple = (64, 32, 16),
         dropout: float = 0.1,
-        grid_size: int = 256,
+        grid_size: int = 128,
         refine_ch: int = 64,
-        ring_scales: tuple = (128, 64, 32),
+        ring_scales: tuple = (64, 32, 16),
         grid_outward: tuple = (True, False, False),
-        src_ratio: tuple = (None, 0.25, 0.1),
+        src_ratio: tuple = (None, 0.5, 0.25),
         n_dst: tuple = (None, 4, 4),
         n_neighbors: tuple = (None, 2, 2),
         lateral_edge_dropout: float = 0.3,
         outward_edge_dropout: float = 0.0,
-        use_slope_gate: tuple = (True, False, False),
+        use_slope_gate: tuple = (True, True, False),
         train_batch_size: int = 16,
     ):
         super().__init__()
@@ -435,7 +435,7 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}, dtype: {DTYPE}")
 
-    B, GRID = 16, 256
+    B, GRID = 16, 128
     C_in = 19
 
     # boy this took a lot of effort for no reason
@@ -443,12 +443,12 @@ if __name__ == '__main__':
     model = RadialGNN(
         img_channels=C_in,
         hidden_channels=64,
-        num_layers=(8, 16, 32),
+        num_layers=(64, 32, 16),
         grid_size=GRID,
         refine_ch=64,
-        ring_scales=(128, 64, 32),
+        ring_scales=(64, 32, 16),
         grid_outward=(True, False, False),
-        src_ratio=(None, 0.25, 0.1),
+        src_ratio=(None, 0.5, 0.25),
         n_dst=(None, 4, 4),
         n_neighbors=(None, 2, 2),
         lateral_edge_dropout=0.3,

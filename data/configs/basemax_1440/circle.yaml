@@ -1,7 +1,7 @@
 model:
-    class_path: burn_emulator.models.unet.UNet
+    class_path: burn_emulator.models.circlenet.CircleNet
     init_args:
         n_channels: 19
         n_outputs: 1
         bilinear: true
-model_name: unet_basemax_720
+model_name: circle_basemax_1440

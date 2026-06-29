@@ -2,6 +2,6 @@ model:
     class_path: burn_emulator.models.circlenet.CircleNet
     init_args:
         n_channels: 19
-        n_outputs: 5
+        n_outputs: 1
         bilinear: true
-model_name: circle_basemax_all
+model_name: circle_basemax_2400

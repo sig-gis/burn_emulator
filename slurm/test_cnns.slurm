@@ -4,10 +4,10 @@
 #SBATCH --error=/mnt/data/mtruong/burn_emulator/logs/test_cnns_%A_%a.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=2
-#SBATCH --mem=31000
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=10000
 #SBATCH --nodelist=dragon05
-#SBATCH --array=0-15%4
+#SBATCH --array=0-11%12
 
 
 
@@ -26,10 +26,12 @@ MODEL_CONFIGS=(
 )
 
 DATA_CONFIGS=(
-    "basemax_480"
-    "basemax_720"
-    "basemax_960"
     "basemax_all"
+    "basemax_2400"
+    "basemax_1920"
+    "basemax_1440"
+    "basemax_960"
+    "basemax_480"
 )
 
 TEST_CONFIGS=(

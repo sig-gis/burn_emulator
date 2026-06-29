@@ -68,9 +68,10 @@ class IgnitionDataset(Dataset):
 
         # occasionally ignitions are at a border
         S = self.chip_size // 2
+        O = self.chip_size % 2
         _, H, W = self.fuels[fkey]['fbfm'].shape
-        ymin, ymax = max(0, y-S), min(y+S, H)
-        xmin, xmax = max(0, x-S), min(x+S, W)
+        ymin, ymax = max(0, y-S), min(y+S+O, H)
+        xmin, xmax = max(0, x-S), min(x+S+O, W)
         yslc = slice(ymin, ymax)
         xslc = slice(xmin, xmax)
         
