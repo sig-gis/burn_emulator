@@ -90,3 +90,77 @@ class UNet(nn.Module):
         x = self.up4(x, x1)
         logits: Tensor = self.outc(x)
         return logits
+
+
+if __name__ == '__main__':
+    import time
+    from torchinfo import summary
+    from burn_emulator.constants import DTYPE
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Device: {device}, dtype: {DTYPE}")
+
+    B, GRID = 16, 128
+    C_in = 19
+    N_OUTPUTS = 1
+
+    print("Building UNet")
+    model = UNet(
+        n_channels=C_in,
+        n_outputs=N_OUTPUTS,
+        bilinear=True,
+    ).to(device=device)
+
+    print("\nParameter breakdown:")
+    total = sum(p.numel() for p in model.parameters())
+    for name, module in [
+        ('inc',   model.inc),
+        ('down1', model.down1),
+        ('down2', model.down2),
+        ('down3', model.down3),
+        ('down4', model.down4),
+        ('up1',   model.up1),
+        ('up2',   model.up2),
+        ('up3',   model.up3),
+        ('up4',   model.up4),
+        ('outc',  model.outc),
+    ]:
+        params = sum(p.numel() for p in module.parameters())
+        print(f"  {name:<6} : {params:>10,}")
+    print(f"  {'Total':<6} : {total:>10,}")
+
+    model.eval()
+    summary(model, input_size=(B, C_in, GRID, GRID), device=device,
+            col_names=["input_size", "output_size", "num_params"],
+            depth=3, mode='eval', verbose=1)
+
+    model.to(DTYPE)
+    image = torch.zeros(B, C_in, GRID, GRID, device=device, dtype=DTYPE)
+    image[:, 0] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(DTYPE) * 0.731  # flow_x
+    image[:, 1] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(DTYPE) * 0.731  # flow_y
+    image[:, 2:] = torch.rand(B, C_in - 2, GRID, GRID, device=device).to(DTYPE)
+
+    # warmup
+    with torch.no_grad():
+        _ = model(image)
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+    N_RUNS = 5
+    t0 = time.perf_counter()
+    with torch.no_grad():
+        for _ in range(N_RUNS):
+            pred = model(image)
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    elapsed = (time.perf_counter() - t0) / N_RUNS
+    print(f"\nForward pass : {elapsed*1000:.1f} ms  (mean over {N_RUNS} runs)")
+
+    print(f"Input  : ({B}, {C_in}, {GRID}, {GRID})")
+    print(f"Output : {tuple(pred.shape)}")
+    assert pred.shape == (B, N_OUTPUTS, GRID, GRID)
+
+    burn_prob = torch.sigmoid(pred)
+    print(f"Burn prob range : [{burn_prob.min():.3f}, {burn_prob.max():.3f}]")
+
+    print("\nAll checks passed")
