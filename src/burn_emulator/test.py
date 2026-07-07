@@ -209,7 +209,8 @@ def test_model(
           "sam_perf_time_mu": np.round(np.mean(sam_perf_times), decimals=2).item(),
           "drn_perf_time_mu": np.round(np.mean(drn_perf_times), decimals=2).item()}
     df = pd.DataFrame([tp])
-    df.to_csv(outpath / 'throughput.csv', mode='a', index=False, header=False)
+    header = False if (outpath / 'throughput.csv').exists() else True
+    df.to_csv(outpath / 'throughput.csv', mode='a', index=False, header=header)
 
 
 def test(**kwargs: Any) -> None:

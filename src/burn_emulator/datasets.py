@@ -27,6 +27,11 @@ class IgnitionDataset(Dataset):
     ) -> None:
         if Path(ignitions_path).suffix == ".csv":
             self.ignitions = pd.read_csv(ignitions_path)
+            if "cbp_burn" not in self.ignitions.columns:
+                name = Path(ignitions_path).stem.split("_")[0]
+                self.ignitions.loc[:, "cbp_burn"] = name
+            if "ignition_number" not in self.ignitions.columns:
+                self.ignitions = self.ignitions.reset_index(names="ignition_number")
         else:
             ignitions_paths = Path(ignitions_path).glob("**/*.csv")
             self.ignitions = []
@@ -87,7 +92,6 @@ class IgnitionDataset(Dataset):
             xpad = (xdiff, 0, 0, 0) if xmin == 0 else (0, xdiff, 0, 0)
             mask = F.pad(mask, xpad, mode='constant', value=0)
 
-        
         # slopes (after caching) 0: x flow 1: y flow
         arrX = []
         for key, values in self.topos.items():

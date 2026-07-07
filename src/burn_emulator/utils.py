@@ -10,7 +10,7 @@ import yaml
 from pathlib import Path
 from typing import Optional
 
-from burn_emulator.constants import FBFM_OH_MAP, NO_DATA
+from burn_emulator.constants import FBFM_OH_MAP, INPUT_KEYS, NO_DATA
 
 
 def to_flow(aspect_raw: torch.Tensor, slope_deg: torch.Tensor):
@@ -39,7 +39,6 @@ def cache_inputs(
     inputs = {}
     topos = {}
     masks = {}
-    keys = []
     for fuels_path, burn_path in zip(fuels_paths, burn_paths):
         fkey = fuels_path.stem
         assert burn_path.stem in fkey, f'{burn_path.stem} not in {fkey}'
@@ -48,6 +47,8 @@ def cache_inputs(
         fuels_files = sorted(list(fuels_path.glob("*.tif")))
         for file in fuels_files:
             name = file.stem.rsplit("_", 1)[1]
+            if name not in INPUT_KEYS:
+                continue
             with rasterio.open(file) as src:
                 dat = src.read()
                 if name == 'fbfm':
@@ -55,16 +56,14 @@ def cache_inputs(
                     masks[fkey] = torch.logical_not(masks[fkey])
                     for k, v in FBFM_OH_MAP.items():
                         dat[dat == k] = v
-                    dat = F.one_hot(torch.tensor(dat).long(), num_classes=len(FBFM_OH_MAP))
+                    dat = F.one_hot(torch.tensor(dat).long(), num_classes=len(np.unique(list(FBFM_OH_MAP.values()))))
                     dat = dat.squeeze(0).permute(2, 0, 1)
-                    dat = dat[1:] # separating no data mask
+                    dat = dat[1:]
                 else:
                     dat = dat.astype(float)
                     dat[dat == src.nodata] = np.nan
                     dat[dat < 0] = 0
             inputs[fkey][name] = dat
-            if name not in keys:
-                keys.append(name)
     stats_file = stats_path.exists()
 
     if stats_file:
@@ -73,10 +72,9 @@ def cache_inputs(
     else:
         stats = {}
         
-    for key in keys:
+    for key in INPUT_KEYS:
         if key != 'fbfm':
             arrs = []
-            
             if stats_file:
                 mean = stats[key]['mean']
                 stdv = stats[key]['stdv']

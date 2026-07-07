@@ -8,6 +8,7 @@ FBFM_NO_DATA = 0
 DTYPE = torch.bfloat16
 FBFM_OH_MAP = {-999: 0, # no data
                0: 1, # should be 91 but is in the same spot one-hot encoded anyway
+               91: 1,
                101: 2,
                105: 3,
                106: 4,
@@ -30,4 +31,5 @@ INF_PROFILE = {'driver': 'GTiff',
                'compress': 'lzw',
                'interleave': 'band'
 }
+INPUT_KEYS = ['cbd', 'cbh', 'cc', 'fbfm', 'th']
 OUTDIR = Path("data/outputs")

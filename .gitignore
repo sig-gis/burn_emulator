@@ -10,5 +10,5 @@ wheels/
 .venv
 
 # experiment data
-data/outputs
+data
 logs

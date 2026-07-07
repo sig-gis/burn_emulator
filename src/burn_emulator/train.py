@@ -29,7 +29,8 @@ def train_model(
     model.train()
     start_time = time.perf_counter()
     for epoch in range(num_epochs):
-        train_loss_avg = 0
+        train_loss_acc = 0
+        train_loss_avg = None
         log = []
         for X, Y, M in train_loader:
             X = X.to('cuda', dtype=DTYPE)
@@ -45,11 +46,23 @@ def train_model(
             optimizer.step()
 
             step += 1
-            train_loss_avg += train_loss.item()
+            train_loss_val = train_loss.item()
+            train_loss_acc += train_loss_val
+            log.append({"train_loss_avg": train_loss_avg,
+                        "train_loss_val": train_loss_val,
+                        "epoch": epoch,
+                        "step": step,
+                        "time": time.perf_counter()-start_time})
+            
+        train_loss_avg = train_loss_acc / len(train_loader)
 
-        train_loss_avg /= len(train_loader)
-        log.append({"train_loss_avg": train_loss_avg, "epoch": epoch, "step": step, "time": time.perf_counter()-start_time})
+        log.append({"train_loss_avg": train_loss_avg,
+                    "train_loss_val": None,
+                    "epoch": epoch,
+                    "step": step,
+                    "time": time.perf_counter()-start_time})
         save_checkpoint(model, f"{model_name}_train", epoch, step, train_loss_avg, train_top3, outpath)
+    
         header = False if (outpath / "train_log.csv").exists() else True
         pd.DataFrame(log).to_csv(outpath / "train_log.csv", mode="a", index=False, header=header)
     save_checkpoint(model, f"{model_name}_train", epoch, step, train_loss_avg, [], outpath)
