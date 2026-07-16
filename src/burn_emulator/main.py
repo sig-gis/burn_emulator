@@ -2,12 +2,12 @@ import argparse
 import yaml
 
 from burn_emulator.train import train
-from burn_emulator.test import test
+from burn_emulator.test import test, test_iterations
 
 
 def main():
     parser = argparse.ArgumentParser(description="")
-    parser.add_argument("-m", "--method", default="train", choices=["train", "test"])
+    parser.add_argument("-m", "--method", default="train", choices=["train", "test", "test_iter"])
     parser.add_argument("-c", "--config", action="append", required=True)
     args = parser.parse_args()
 
@@ -21,6 +21,8 @@ def main():
             train(**configs)
         case "test":
             test(**configs)
+        case "test_iterations":
+            test_iterations(**configs)
 
 if __name__ == "__main__":
     main()

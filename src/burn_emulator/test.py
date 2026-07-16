@@ -1,3 +1,4 @@
+import copy
 import numpy as np
 import pandas as pd
 import rasterio
@@ -5,7 +6,7 @@ import time
 import torch
 import torch.nn.functional as F
 
-from concurrent.futures import ThreadPoolExecutor, Future
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, Future, as_completed
 from pathlib import Path
 from typing import Any
 from torch.utils.data import DataLoader
@@ -123,9 +124,6 @@ def test_model(
     outpath: Path,
     max_write_workers: int = 4,
 ) -> None:
-    model.to('cuda', dtype=DTYPE)
-    model.eval()
-
     # how fragile things can be...
     fuels_path0 = list(test_loader.dataset.fuels_paths[0].glob("*fbfm*.tif"))[0]
     with rasterio.open(fuels_path0) as src:
@@ -214,15 +212,17 @@ def test_model(
 
 
 def test(**kwargs: Any) -> None:
-    model = dynamic_import(kwargs.get("model"))
     dataset = dynamic_import(kwargs.get("dataset"))
     test_loader = dynamic_import(kwargs.get("dataloader"), {"dataset": dataset})
 
+    model = dynamic_import(kwargs.get("model"))
     ckpt_dir = OUTDIR / kwargs.get("model_name") / "checkpoints"
     ckpt_path = sorted(ckpt_dir.glob("*.pt"))[0]
     ckpt = torch.load(ckpt_path, map_location='cuda')
     model.load_state_dict(ckpt)
-
+    model.to('cuda', dtype=DTYPE)
+    model.eval()
+    
     test_name = f'{kwargs.get("model_name")}_{kwargs.get("test_name")}'
     test_model(
         model=model,
@@ -232,3 +232,68 @@ def test(**kwargs: Any) -> None:
         monte_carlo=kwargs.get("monte_carlo"),
         outpath=OUTDIR / "inference",
     )
+
+
+def _run_single(model_spec, base_test_name, model_name, kwargs, dataset_kwargs, i, s, scenarios_path):
+    model = dynamic_import(model_spec)
+    ckpt_dir = OUTDIR / model_name / "checkpoints"
+    ckpt_path = sorted(ckpt_dir.glob("*.pt"))[0]
+    ckpt = torch.load(ckpt_path, map_location='cuda')
+    model.load_state_dict(ckpt)
+    model.to('cuda', dtype=DTYPE)
+    model.eval()
+
+    spath = scenarios_path / f"iteration_{i}" / f"{s}_{base_test_name}"
+    fpath = dataset_kwargs.get("init_args", {}).get("fuels_paths")
+
+    init_args = {
+        "ignitions_path": spath / f"{s}_ignitions_locations.csv",
+        "fuels_paths": [spath] if fpath is None else fpath,
+    }
+
+    ds_kwargs = copy.deepcopy(dataset_kwargs)
+    ds_kwargs["init_args"] = {**ds_kwargs.get("init_args", {}), **init_args}
+
+    dataset = dynamic_import(ds_kwargs)
+    test_loader = dynamic_import(kwargs.get("dataloader"), {"dataset": dataset})
+
+    run_test_name = f"{model_name}_{base_test_name}"
+
+    with torch.no_grad():
+        test_model(
+            model=model,
+            num_sims=kwargs.get("num_sims"),
+            test_loader=test_loader,
+            test_name=run_test_name,
+            monte_carlo=kwargs.get("monte_carlo"),
+            outpath=OUTDIR / "inference" / f"iteration_{i}"
+        )
+    return i, s
+
+
+def test_iterations(**kwargs: Any) -> None:
+    num_iterations = kwargs.get("num_iterations")
+    num_scenarios = kwargs.get("num_scenarios")
+    scenarios_path = Path(kwargs.get("scenarios_path"))
+    base_test_name = kwargs.get("test_name")
+    model_name = kwargs.get("model_name")
+    model_spec = kwargs.get("model")
+    dataset_kwargs = kwargs.get("dataset")
+    max_workers = kwargs.get("max_workers", 4)
+
+    tasks = [(i, s) for i in range(num_iterations) for s in range(1, num_scenarios+1)]
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(
+                _run_single, model_spec, base_test_name, model_name, kwargs,
+                dataset_kwargs, i, s, scenarios_path
+            ): (i, s)
+            for i, s in tasks
+        }
+        for future in as_completed(futures):
+            i, s = futures[future]
+            try:
+                future.result()
+            except Exception as e:
+                print(f"iteration_{i} scenario_{s} failed: {e}")

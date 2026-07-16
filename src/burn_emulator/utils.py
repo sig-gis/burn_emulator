@@ -1,3 +1,4 @@
+import copy
 import heapq
 import importlib
 import numpy as np
@@ -39,6 +40,11 @@ def cache_inputs(
     inputs = {}
     topos = {}
     masks = {}
+    
+    # how fragile must you be?
+    if burn_paths is None:
+        burn_paths = copy.copy(fuels_paths)
+    
     for fuels_path, burn_path in zip(fuels_paths, burn_paths):
         fkey = fuels_path.stem
         assert burn_path.stem in fkey, f'{burn_path.stem} not in {fkey}'

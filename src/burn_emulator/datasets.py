@@ -25,26 +25,11 @@ class IgnitionDataset(Dataset):
         jitter: Optional[int] = None,
         ignition_only: bool = False,
     ) -> None:
-        if Path(ignitions_path).suffix == ".csv":
-            self.ignitions = pd.read_csv(ignitions_path)
-            if "cbp_burn" not in self.ignitions.columns:
-                name = Path(ignitions_path).stem.split("_")[0]
-                self.ignitions.loc[:, "cbp_burn"] = name
-            if "ignition_number" not in self.ignitions.columns:
-                self.ignitions = self.ignitions.reset_index(names="ignition_number")
-        else:
-            ignitions_paths = Path(ignitions_path).glob("**/*.csv")
-            self.ignitions = []
-            for ignitions_path in sorted(ignitions_paths):
-                name = ignitions_path.stem.split("_")[0]
-                ignition = pd.read_csv(ignitions_path)
-                ignition = ignition.reset_index(names="ignition_number")
-                ignition.loc[:, "cbp_burn"] = name
-                self.ignitions.append(ignition)
-            self.ignitions = pd.concat(self.ignitions)
+        if ignitions_path is not None:
+            self.set_ignitions(ignitions_path)
         
         self.fuels_paths = [Path(p) for p in fuels_paths]
-        self.burn_paths = [Path(p) for p in burn_paths]
+        self.burn_paths = [Path(p) for p in burn_paths] if burn_paths else None
         self.topo_path = Path(topo_path)
         self.stats_path = Path(stats_path)
         
@@ -55,15 +40,23 @@ class IgnitionDataset(Dataset):
         self.ignition_only = ignition_only
 
     def __len__(self) -> int:
-        return len(self.ignitions)*len(self.burn_paths)
+        if self.burn_paths is None:
+            return len(self.ignitions)
+        else:
+            return len(self.ignitions)*len(self.burn_paths)
     
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        sidx = idx // len(self.burn_paths)
-        bidx = idx % len(self.burn_paths)
-        burn_path = self.burn_paths[bidx]
+        if self.burn_paths is None:
+            sidx = idx
+            bidx = 0
+        else:
+            sidx = idx // len(self.burn_paths)
+            bidx = idx % len(self.burn_paths)
+            burn_path = self.burn_paths[bidx]
+            
         fkey = self.fuels_paths[bidx].stem
-
         ignition = self.ignitions.iloc[sidx]
+        
         y = int(ignition['row'].item())
         x = int(ignition['col'].item())
         
@@ -119,7 +112,7 @@ class IgnitionDataset(Dataset):
         arrX = torch.concat([arrX, arr_fbfm])
         
         # burns are not necessary for inference
-        if not self.ignition_only:
+        if not self.ignition_only and self.burn_paths is not None:
             arrY = []
             igd = burn_path / str(int(ignition['ignition_number'].item()))
             if self.burn_times:
@@ -142,3 +135,22 @@ class IgnitionDataset(Dataset):
             return arrX, arrY, mask
         else:
             return arrX, mask, (ydiff, xdiff), (ymin, ymax, xmin, xmax), (sidx, bidx)
+    
+    def set_ignitions(self, ignitions_path):
+        if Path(ignitions_path).suffix == ".csv":
+            self.ignitions = pd.read_csv(ignitions_path)
+            if "cbp_burn" not in self.ignitions.columns:
+                name = Path(ignitions_path).stem.split("_")[0]
+                self.ignitions.loc[:, "cbp_burn"] = name
+            if "ignition_number" not in self.ignitions.columns:
+                self.ignitions = self.ignitions.reset_index(names="ignition_number")
+        else:
+            ignitions_paths = Path(ignitions_path).glob("**/*.csv")
+            self.ignitions = []
+            for ignitions_path in sorted(ignitions_paths):
+                name = ignitions_path.stem.split("_")[0]
+                ignition = pd.read_csv(ignitions_path)
+                ignition = ignition.reset_index(names="ignition_number")
+                ignition.loc[:, "cbp_burn"] = name
+                self.ignitions.append(ignition)
+            self.ignitions = pd.concat(self.ignitions)
