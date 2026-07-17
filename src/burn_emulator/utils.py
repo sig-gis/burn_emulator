@@ -8,10 +8,12 @@ import torch
 import torch.nn.functional as F
 import yaml
 
-from pathlib import Path
+
+from google.cloud import storage
+from rasterio.windows import Window
 from typing import Optional
 
-from burn_emulator.constants import FBFM_OH_MAP, INPUT_KEYS, NO_DATA
+from burn_emulator.constants import Path, FBFM_OH_MAP, INPUT_KEYS, NO_DATA, USE_CLOUD_PATHS
 
 
 def to_flow(aspect_raw: torch.Tensor, slope_deg: torch.Tensor):
@@ -32,30 +34,24 @@ def to_flow(aspect_raw: torch.Tensor, slope_deg: torch.Tensor):
 
 def cache_inputs(
     fuels_paths: list[Path],
-    burn_paths: list[Path],
     topo_path: list[Path],
-    stats_path: Path,
-    flow: bool = True
+    stats_path: dict,
+    flow: bool = True,
+    window: Window = None
 ) -> tuple[dict, dict, dict]:
     inputs = {}
     topos = {}
     masks = {}
-    
-    # how fragile must you be?
-    if burn_paths is None:
-        burn_paths = copy.copy(fuels_paths)
-    
-    for fuels_path, burn_path in zip(fuels_paths, burn_paths):
+
+    for fuels_path in fuels_paths:
         fkey = fuels_path.stem
-        assert burn_path.stem in fkey, f'{burn_path.stem} not in {fkey}'
 
         inputs[fkey] = {}
-        fuels_files = sorted(list(fuels_path.glob("*.tif")))
         for file in fuels_files:
             name = file.stem.rsplit("_", 1)[1]
             if name not in INPUT_KEYS:
                 continue
-            with rasterio.open(file) as src:
+            with rasterio.open(file, window=window) as src:
                 dat = src.read()
                 if name == 'fbfm':
                     masks[fkey] = torch.tensor(dat == src.nodata)
@@ -70,18 +66,14 @@ def cache_inputs(
                     dat[dat == src.nodata] = np.nan
                     dat[dat < 0] = 0
             inputs[fkey][name] = dat
-    stats_file = stats_path.exists()
-
-    if stats_file:
-        with open(stats_path) as f:
+    stats_data = self.stats_path.exists()
+    if stats_data:
+        with stats_path.open() as f:
             stats = yaml.safe_load(f)
-    else:
-        stats = {}
-        
     for key in INPUT_KEYS:
         if key != 'fbfm':
             arrs = []
-            if stats_file:
+            if stats_data:
                 mean = stats[key]['mean']
                 stdv = stats[key]['stdv']
             else:
@@ -91,7 +83,6 @@ def cache_inputs(
                 arrs = np.concatenate(arrs)
                 mean = np.nanmean(arrs).item()
                 stdv = np.nanstd(arrs).item()
-
                 stats[key] = {"mean": mean, "stdv": stdv}
             
             for fuels_path in fuels_paths:
@@ -99,11 +90,15 @@ def cache_inputs(
                 inputs[fkey][key] = (inputs[fkey][key] - mean) / stdv
                 inputs[fkey][key] = torch.tensor(inputs[fkey][key])
                 inputs[fkey][key][torch.isnan(inputs[fkey][key])] = NO_DATA
+    if not stats_data and not USE_CLOUD_PATHS:
+        stats_path.open("w") as file:
+            yaml.dump(stats, file, sort_keys=False)
+    
     
     if flow:
-        with rasterio.open(topo_path / "aspect.tif") as src:
+        with rasterio.open(topo_path / "aspect.tif", window=window) as src:
             aspect = torch.tensor(src.read()).to(float)
-        with rasterio.open(topo_path / "slope_degrees.tif") as src:
+        with rasterio.open(topo_path / "slope_degrees.tif", window=window) as src:
             slope = torch.tensor(src.read()).to(float)
         flow_x, flow_y = to_flow(aspect, slope)
         topos['flow_x'] = flow_x
@@ -111,13 +106,9 @@ def cache_inputs(
     else:
         for topo_file in topo_path.glob("*.tif"):
             tkey = topo_file.stem
-            with rasterio.open(topo_file) as src:
+            with rasterio.open(topo_file, window=window) as src:
                 dat = torch.tensor(src.read())
                 topos[tkey] = dat.to(float)
-
-    if not stats_file:
-        with open(stats_path, "w") as file:
-            yaml.dump(stats, file, sort_keys=False)
 
     return inputs, topos, masks
 
@@ -133,7 +124,7 @@ def dynamic_import(loader: dict, kwargs: Optional[dict]=None):
     loader_cls = getattr(importlib.import_module(module_path), class_name)
     
     return loader_cls(**init_args)
-  
+
   
 def save_checkpoint(
     model: torch.nn.Module,
@@ -155,3 +146,5 @@ def save_checkpoint(
     if len(heap) > 3:
         _, _, _, worst_path = heapq.heappop(heap)
         (ckpt_dir / f"{worst_path}.pt").unlink()
+
+

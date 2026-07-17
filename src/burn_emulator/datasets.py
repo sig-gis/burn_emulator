@@ -4,11 +4,10 @@ import rasterio
 import torch
 import torch.nn.functional as F
 
-from pathlib import Path
 from torch.utils.data import Dataset
 from typing import Optional
 
-from burn_emulator.constants import NO_DATA
+from burn_emulator.constants import Path, NO_DATA
 from burn_emulator.utils import cache_inputs
 
 
@@ -18,26 +17,27 @@ class IgnitionDataset(Dataset):
         ignitions_path: Path | list[Path],
         fuels_paths: list[Path],
         burn_paths: list[Path],
-        topo_path: list[Path],
+        topo_path: Path,
         stats_path: Path,
-        burn_times: list[int],
+        burn_times: list[int] = [480],
         chip_size: int = 256,
         jitter: Optional[int] = None,
-        ignition_only: bool = False,
-    ) -> None:
-        if ignitions_path is not None:
-            self.set_ignitions(ignitions_path)
+        ignition_density: float = None,
+    ) -> None:        
+        self.set_ignitions(ignitions_path)
         
         self.fuels_paths = [Path(p) for p in fuels_paths]
         self.burn_paths = [Path(p) for p in burn_paths] if burn_paths else None
+        if self.burn_paths is not None:
+            assert len(self.fuels_paths) == self.burn_paths, "Each fuel layer set should have a single associated burn directory"
+        
         self.topo_path = Path(topo_path)
         self.stats_path = Path(stats_path)
+        self.fuels, self.topos, self.masks = cache_inputs(self.fuels_paths, self.topo_path, self.stats_path)
         
-        self.fuels, self.topos, self.masks = cache_inputs(self.fuels_paths, self.burn_paths, self.topo_path, self.stats_path)
         self.burn_times = [str(bt) for bt in burn_times]
         self.chip_size = chip_size
         self.jitter = jitter
-        self.ignition_only = ignition_only
 
     def __len__(self) -> int:
         if self.burn_paths is None:
@@ -112,7 +112,7 @@ class IgnitionDataset(Dataset):
         arrX = torch.concat([arrX, arr_fbfm])
         
         # burns are not necessary for inference
-        if not self.ignition_only and self.burn_paths is not None:
+        if self.burn_paths is not None:
             arrY = []
             igd = burn_path / str(int(ignition['ignition_number'].item()))
             if self.burn_times:
@@ -137,20 +137,23 @@ class IgnitionDataset(Dataset):
             return arrX, mask, (ydiff, xdiff), (ymin, ymax, xmin, xmax), (sidx, bidx)
     
     def set_ignitions(self, ignitions_path):
-        if Path(ignitions_path).suffix == ".csv":
-            self.ignitions = pd.read_csv(ignitions_path)
-            if "cbp_burn" not in self.ignitions.columns:
-                name = Path(ignitions_path).stem.split("_")[0]
-                self.ignitions.loc[:, "cbp_burn"] = name
-            if "ignition_number" not in self.ignitions.columns:
-                self.ignitions = self.ignitions.reset_index(names="ignition_number")
-        else:
-            ignitions_paths = Path(ignitions_path).glob("**/*.csv")
-            self.ignitions = []
-            for ignitions_path in sorted(ignitions_paths):
-                name = ignitions_path.stem.split("_")[0]
-                ignition = pd.read_csv(ignitions_path)
-                ignition = ignition.reset_index(names="ignition_number")
-                ignition.loc[:, "cbp_burn"] = name
-                self.ignitions.append(ignition)
-            self.ignitions = pd.concat(self.ignitions)
+        match Path(ignitions_path).suffix:
+            case ".csv":
+                self.ignitions = pd.read_csv(ignitions_path)
+                if "cbp_burn" not in self.ignitions.columns:
+                    name = Path(ignitions_path).stem.split("_")[0]
+                    self.ignitions.loc[:, "cbp_burn"] = name
+                if "ignition_number" not in self.ignitions.columns:
+                    self.ignitions = self.ignitions.reset_index(names="ignition_number")
+            case ".gpkg":
+                pass
+            case "_":
+                ignitions_paths = Path(ignitions_path).glob("**/*.csv")
+                self.ignitions = []
+                for ignitions_path in sorted(ignitions_paths):
+                    name = ignitions_path.stem.split("_")[0]
+                    ignition = pd.read_csv(ignitions_path)
+                    ignition = ignition.reset_index(names="ignition_number")
+                    ignition.loc[:, "cbp_burn"] = name
+                    self.ignitions.append(ignition)
+                self.ignitions = pd.concat(self.ignitions)

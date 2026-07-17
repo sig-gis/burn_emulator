@@ -1,11 +1,20 @@
+import os
 import torch
 
-from pathlib import Path
+USE_CLOUD_PATHS = os.environ.get("USE_CLOUD_PATHS") == 1
+if USE_CLOUD_PATHS:
+    from cloudpathlib import AnyPath as Path
+else:
+    from pathlib import Path
+
+__all__ = ["Path"]
 
 
-NO_DATA = -1
-FBFM_NO_DATA = 0
-DTYPE = torch.bfloat16
+# training constants
+DEFAULT_DTYPE = torch.bfloat16 # default trainining dtype for memory saving
+NO_DATA = -1 # no data value for NN inputs
+
+# input fuel specific constants
 FBFM_OH_MAP = {-999: 0, # no data
                0: 1, # should be 91 but is in the same spot one-hot encoded anyway
                91: 1,
@@ -32,4 +41,14 @@ INF_PROFILE = {'driver': 'GTiff',
                'interleave': 'band'
 }
 INPUT_KEYS = ['cbd', 'cbh', 'cc', 'fbfm', 'th']
+
+# path constants
+METHODS = [
+  "train", 
+  "test",
+  "test_iterations",
+  "package",
+  "run"
+]
 OUTDIR = Path("data/outputs")
+DOCKERDIR = Path("docker")

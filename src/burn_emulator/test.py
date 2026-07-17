@@ -7,11 +7,10 @@ import torch
 import torch.nn.functional as F
 
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, Future, as_completed
-from pathlib import Path
 from typing import Any
 from torch.utils.data import DataLoader
 
-from burn_emulator.constants import DTYPE, INF_PROFILE, OUTDIR
+from burn_emulator.constants import Path, DEFAULT_DTYPE, INF_PROFILE, OUTDIR
 from burn_emulator.utils import dynamic_import
 
 
@@ -67,7 +66,7 @@ def _write_monte_carlo(
     log1m_prod_acc: torch.Tensor,
     mask: torch.Tensor,
     test_name: str,
-    outpath: Path,
+    outdir: Path,
     profile: dict,
 ) -> None:
     mean_out = mean_acc.float() * mask
@@ -77,13 +76,13 @@ def _write_monte_carlo(
         - (log1m_prod_acc / n_count.clamp(min=1))
     ).float() * mask
     n_out = n_count.float() * mask
-    with rasterio.open(outpath / f'{test_name}_entropy.tif', 'w', **profile) as dst:
+    with rasterio.open(outdir / f'{test_name}_entropy.tif', 'w', **profile) as dst:
         dst.write(entropy_out.cpu().numpy())
-    with rasterio.open(outpath / f'{test_name}_mean.tif', 'w', **profile) as dst:
+    with rasterio.open(outdir / f'{test_name}_mean.tif', 'w', **profile) as dst:
         dst.write(mean_out.cpu().numpy())
-    with rasterio.open(outpath / f'{test_name}_stdv.tif', 'w', **profile) as dst:
+    with rasterio.open(outdir / f'{test_name}_stdv.tif', 'w', **profile) as dst:
         dst.write(std_out.cpu().numpy())
-    with rasterio.open(outpath / f'{test_name}_count.tif', 'w', **profile) as dst:
+    with rasterio.open(outdir / f'{test_name}_count.tif', 'w', **profile) as dst:
         dst.write(n_out.cpu().numpy())
 
 
@@ -96,7 +95,7 @@ def _write_batch(
     shape: tuple,
     profile: dict,
     test_name: str,
-    outpath: Path,
+    outdir: Path,
 ) -> None:
     sidx, _ = idxs
 
@@ -108,7 +107,7 @@ def _write_batch(
 
         ignition_number = str(ignitions.iloc[int(sidx[b])]['ignition_number'])
         cbp_burn = str(ignitions.iloc[int(sidx[b])]['cbp_burn'])
-        sample_path = outpath / cbp_burn / ignition_number / f'{test_name}.tif'
+        sample_path = outdir / cbp_burn / ignition_number / f'{test_name}.tif'
         sample_path.parent.mkdir(exist_ok=True, parents=True)
 
         with rasterio.open(sample_path, 'w', **profile) as dst:
@@ -116,13 +115,13 @@ def _write_batch(
 
 
 def test_model(
-    model: torch.nn.Module,
-    num_sims: int,
-    test_loader: DataLoader,
     test_name: str,
+    model: torch.nn.Module,
+    test_loader: DataLoader,
+    num_sims: int,
     monte_carlo: bool,
-    outpath: Path,
-    max_write_workers: int = 4,
+    outdir: Path,
+    max_write_workers: int,
 ) -> None:
     # how fragile things can be...
     fuels_path0 = list(test_loader.dataset.fuels_paths[0].glob("*fbfm*.tif"))[0]
@@ -158,8 +157,8 @@ def test_model(
         for _ in range(num_sims):
             sim_start_time = time.perf_counter()
             for X, M, diffs, slices, idxs in test_loader:
-                X = X.to('cuda', dtype=DTYPE)
-                M = M.to('cuda', dtype=DTYPE)
+                X = X.to('cuda', dtype=DEFAULT_DTYPE)
+                M = M.to('cuda', dtype=DEFAULT_DTYPE)
                 
                 sam_start_time = time.perf_counter()
                 pred = (F.sigmoid(model(X)) * M).to(odtype)
@@ -184,7 +183,7 @@ def test_model(
                         diffs, slices, idxs,
                         test_loader.dataset.ignitions,
                         shape, profile.copy(),
-                        test_name, outpath,
+                        test_name, outdir,
                     ))
             sim_end_time = time.perf_counter()
             sim_perf_times.append(sim_end_time-sim_start_time)
@@ -194,7 +193,7 @@ def test_model(
         _write_monte_carlo(
             n_count, mean_acc, M2_acc,
             log_prod_acc, log1m_prod_acc,
-            mask, test_name, outpath, profile,
+            mask, test_name, outdir, profile,
         )
     test_end_time = time.perf_counter()
     test_perf_time = test_end_time-test_start_time
@@ -207,87 +206,92 @@ def test_model(
           "sam_perf_time_mu": np.round(np.mean(sam_perf_times), decimals=2).item(),
           "drn_perf_time_mu": np.round(np.mean(drn_perf_times), decimals=2).item()}
     df = pd.DataFrame([tp])
-    header = False if (outpath / 'throughput.csv').exists() else True
-    df.to_csv(outpath / 'throughput.csv', mode='a', index=False, header=header)
+    header = False if (outdir / 'throughput.csv').exists() else True
+    df.to_csv(outdir / 'throughput.csv', mode='a', index=False, header=header)
 
 
-def test(**kwargs: Any) -> None:
-    dataset = dynamic_import(kwargs.get("dataset"))
-    test_loader = dynamic_import(kwargs.get("dataloader"), {"dataset": dataset})
-
-    model = dynamic_import(kwargs.get("model"))
-    ckpt_dir = OUTDIR / kwargs.get("model_name") / "checkpoints"
-    ckpt_path = sorted(ckpt_dir.glob("*.pt"))[0]
+def _run_single_test(test_name: str,
+                     model_name: str, 
+                     model: dict,
+                     dataset: dict,
+                     iteration: int=None,
+                     scenario: int=None,
+                     num_sims: int=None,
+                     monte_carlo: bool=False,
+                     max_write_workers: int=4
+                     **kwargs: Any):
+    model = dynamic_import(model)
+    if (ckpt_path := Path(kwargs.get("ckpt_path"))) is None:
+        ckpt_dir = OUTDIR / model_name / "checkpoints"
+        ckpt_path = sorted(ckpt_dir.glob("*.pt"))[0]
     ckpt = torch.load(ckpt_path, map_location='cuda')
     model.load_state_dict(ckpt)
-    model.to('cuda', dtype=DTYPE)
-    model.eval()
-    
-    test_name = f'{kwargs.get("model_name")}_{kwargs.get("test_name")}'
-    test_model(
-        model=model,
-        num_sims=kwargs.get("num_sims"),
-        test_loader=test_loader,
-        test_name=test_name,
-        monte_carlo=kwargs.get("monte_carlo"),
-        outpath=OUTDIR / "inference",
-    )
-
-
-def _run_single(model_spec, base_test_name, model_name, kwargs, dataset_kwargs, i, s, scenarios_path):
-    model = dynamic_import(model_spec)
-    ckpt_dir = OUTDIR / model_name / "checkpoints"
-    ckpt_path = sorted(ckpt_dir.glob("*.pt"))[0]
-    ckpt = torch.load(ckpt_path, map_location='cuda')
-    model.load_state_dict(ckpt)
-    model.to('cuda', dtype=DTYPE)
+    model.to('cuda', dtype=DEFAULT_DTYPE)
     model.eval()
 
-    spath = scenarios_path / f"iteration_{i}" / f"{s}_{base_test_name}"
-    fpath = dataset_kwargs.get("init_args", {}).get("fuels_paths")
-
-    init_args = {
-        "ignitions_path": spath / f"{s}_ignitions_locations.csv",
-        "fuels_paths": [spath] if fpath is None else fpath,
-    }
-
-    ds_kwargs = copy.deepcopy(dataset_kwargs)
-    ds_kwargs["init_args"] = {**ds_kwargs.get("init_args", {}), **init_args}
+    outdir = OUTDIR / "inference"
+    if iteration is not None and scenario is not None:
+        scenarios_path = Path(kwargs.get("scenarios_path"))
+        spath = scenarios_path / f"iteration_{iteration}" / f"{scenario}_{test_name}"
+        fpath = dataset.get("init_args", {}).get("fuels_paths")
+        outdir /= f"iteration_{iteration}"
+        init_args = {
+            "ignitions_path": spath / f"{scenario}_ignitions_locations.csv",
+            "fuels_paths": [spath] if fpath is None else fpath,
+        }
+        ds_kwargs = copy.deepcopy(dataset)
+        ds_kwargs["init_args"] = {**ds_kwargs.get("init_args", {}), **init_args}
+    else:
+        ds_kwargs = dataset
 
     dataset = dynamic_import(ds_kwargs)
     test_loader = dynamic_import(kwargs.get("dataloader"), {"dataset": dataset})
 
-    run_test_name = f"{model_name}_{base_test_name}"
-
+    run_test_name = f"{model_name}_{test_name}"
     with torch.no_grad():
         test_model(
             model=model,
-            num_sims=kwargs.get("num_sims"),
             test_loader=test_loader,
             test_name=run_test_name,
-            monte_carlo=kwargs.get("monte_carlo"),
-            outpath=OUTDIR / "inference" / f"iteration_{i}"
+            num_sims=num_sims,
+            monte_carlo=monte_carlo,
+            outdir=outdir,
+            max_write_workers=max_write_workers
         )
     return i, s
 
 
-def test_iterations(**kwargs: Any) -> None:
-    num_iterations = kwargs.get("num_iterations")
-    num_scenarios = kwargs.get("num_scenarios")
-    scenarios_path = Path(kwargs.get("scenarios_path"))
-    base_test_name = kwargs.get("test_name")
-    model_name = kwargs.get("model_name")
-    model_spec = kwargs.get("model")
-    dataset_kwargs = kwargs.get("dataset")
-    max_workers = kwargs.get("max_workers", 4)
+def test(test_name: str,
+         model_name: str, 
+         model: dict,
+         dataset: dict,
+         max_write_workers: int,
+         **kwargs: Any) -> None:
+    _run_single_test(test_name=test_name, 
+                     model_name=model_name,
+                     model=model,
+                     dataset=dataset,
+                     max_write_workers=max_write_workers)
 
+
+def test_iterations(test_name: str,
+                    model_name: str, 
+                    model: dict,
+                    dataset: dict,
+                    num_iterations: int, 
+                    num_scenarios: int,
+                    scenarios_path: str,
+                    max_workers: int=4,
+                    num_sims: int=None,
+                    monte_carlo: bool=False,
+                    max_write_workers: int=4
+                    **kwargs: Any) -> None:
     tasks = [(i, s) for i in range(num_iterations) for s in range(1, num_scenarios+1)]
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {
             executor.submit(
-                _run_single, model_spec, base_test_name, model_name, kwargs,
-                dataset_kwargs, i, s, scenarios_path
+                _run_single_test,test_name, model_name, model, dataset, i, s, num_sims, monte_carlo, scenarios_path, max_write_workers
             ): (i, s)
             for i, s in tasks
         }

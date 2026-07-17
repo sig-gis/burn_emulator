@@ -5,7 +5,9 @@ description = ""
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "cloudpathlib[azure,gs,s3]>=0.24.0",
     "geopandas>=1.1.4",
+    "google-cloud-storage>=3.13.0",
     "pyyaml>=6.0.3",
     "rasterio>=1.5.0",
     "torch>=2.13.0",

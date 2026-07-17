@@ -430,10 +430,10 @@ class RadialGNN(nn.Module):
 if __name__ == '__main__':
     import time
     from torchinfo import summary
-    from burn_emulator.constants import DTYPE
+    from burn_emulator.constants import DEFAULT_DTYPE
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Device: {device}, dtype: {DTYPE}")
+    print(f"Device: {device}, dtype: {DEFAULT_DTYPE}")
 
     B, GRID = 16, 128
     C_in = 19
@@ -479,11 +479,11 @@ if __name__ == '__main__':
             col_names=["input_size", "output_size", "num_params"],
             depth=3, mode='eval', verbose=1)
 
-    model.to(DTYPE)
-    image = torch.zeros(B, C_in, GRID, GRID, device=device, dtype=DTYPE)
-    image[:, 0] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(DTYPE) * 0.731  # flow_x
-    image[:, 1] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(DTYPE) * 0.731  # flow_y
-    image[:, 2:] = torch.rand(B, C_in - 2, GRID, GRID, device=device).to(DTYPE)
+    model.to(DEFAULT_DTYPE)
+    image = torch.zeros(B, C_in, GRID, GRID, device=device, dtype=DEFAULT_DTYPE)
+    image[:, 0] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(DEFAULT_DTYPE) * 0.731  # flow_x
+    image[:, 1] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(DEFAULT_DTYPE) * 0.731  # flow_y
+    image[:, 2:] = torch.rand(B, C_in - 2, GRID, GRID, device=device).to(DEFAULT_DTYPE)
 
     # warmup
     with torch.no_grad():

@@ -3,14 +3,13 @@ import time
 import torch
 import torch.nn as nn
 
-from pathlib import Path
 from typing import Any
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from burn_emulator.utils import dynamic_import, save_checkpoint
-from burn_emulator.constants import DTYPE, OUTDIR
+from burn_emulator.constants import Path, DEFAULT_DTYPE, OUTDIR
 
     
 def train_model(
@@ -25,7 +24,7 @@ def train_model(
     train_top3 = []
     step = 0
     
-    model.to('cuda', dtype=DTYPE)
+    model.to('cuda', dtype=DEFAULT_DTYPE)
     model.train()
     start_time = time.perf_counter()
     for epoch in range(num_epochs):
@@ -33,9 +32,9 @@ def train_model(
         train_loss_avg = None
         log = []
         for X, Y, M in train_loader:
-            X = X.to('cuda', dtype=DTYPE)
-            Y = Y.to('cuda', dtype=DTYPE)
-            M = M.to('cuda', dtype=DTYPE)
+            X = X.to('cuda', dtype=DEFAULT_DTYPE)
+            Y = Y.to('cuda', dtype=DEFAULT_DTYPE)
+            M = M.to('cuda', dtype=DEFAULT_DTYPE)
 
             # no validation loop for now
             # validation is done post training since there is not spatial OOD
@@ -68,21 +67,27 @@ def train_model(
     save_checkpoint(model, f"{model_name}_train", epoch, step, train_loss_avg, [], outpath)
 
 
-def train(**kwargs: Any) -> None:
-    # kwargs are real lazy
-    model = dynamic_import(kwargs.get("model"))
-    dataset = dynamic_import(kwargs.get("dataset"))
-    optimizer = dynamic_import(kwargs.get("optimizer"), {"params": model.parameters()})
-    criterion = dynamic_import(kwargs.get("criterion"))
-    train_loader = dynamic_import(kwargs.get("dataloader"), {"dataset": dataset})
+def train(model: dict,
+          model_name: str,
+          dataset: dict,
+          optimizer: dict,
+          criterion: dict,
+          train_loader: dict,
+          num_epochs: int,
+          **kwargs: Any) -> None:
+    experiment_path = OUTDIR / model_name
+    experiment_path.mkdir(exist_ok=True, parents=True)    
     
-    experiment_path = OUTDIR / kwargs.get("model_name")
-    experiment_path.mkdir(exist_ok=True, parents=True)
+    model = dynamic_import(model)
+    dataset = dynamic_import(dataset, {"stats_path": experiment_path/"stat.yaml"})
+    optimizer = dynamic_import(optimizer, {"params": model.parameters()})
+    criterion = dynamic_import(criterion)
+    train_loader = dynamic_import(dataloader, {"dataset": dataset})
     
     train_model(model=model,
-                num_epochs=kwargs.get("num_epochs"),
+                num_epochs=num_epochs,
                 train_loader=train_loader,
-                model_name=kwargs.get("model_name"),
+                model_name=model_name,
                 optimizer=optimizer,
                 criterion=criterion,
                 outpath=experiment_path)
