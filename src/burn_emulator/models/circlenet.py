@@ -1,14 +1,14 @@
 import math
+from abc import abstractmethod
+
 import numpy as np
 import torch
-import torch.nn.init as init
 import torch.nn as nn
-
-from torch import Tensor
-from torch.nn.parameter import Parameter
-from torch.nn.modules.utils import _pair
-from abc import abstractmethod
+import torch.nn.init as init
 from numpy.typing import NDArray
+from torch import Tensor
+from torch.nn.modules.utils import _pair
+from torch.nn.parameter import Parameter
 
 from burn_emulator.models.unet import OutConv
 
@@ -24,10 +24,10 @@ class CircleLayerBase(nn.Module):
         dilation: int = 1,
         groups: int = 1,
         bias: bool = True,
-        padding_mode: str = 'zeros',
-        version: str = 'CircleLayer base',
+        padding_mode: str = "zeros",
+        version: str = "CircleLayer base",
     ) -> None:
-        super(CircleLayerBase, self).__init__()
+        super().__init__()
         self.version: str = version
         if isinstance(kernel_size, list) or isinstance(kernel_size, tuple):
             if kernel_size[0] != kernel_size[1]:
@@ -51,7 +51,7 @@ class CircleLayerBase(nn.Module):
         if bias:
             self.bias: Parameter | None = Parameter(torch.Tensor(out_channels))
         else:
-            self.register_parameter('bias', None)
+            self.register_parameter("bias", None)
             self.bias = None
 
     def init_weights(self) -> None:
@@ -102,12 +102,14 @@ class CircleLayerBase(nn.Module):
             tl_y: int = grid_y + 1
         else:
             tl_y = grid_y
-        select_x_indexes.append([
-            self.coordinate_to_index(tl_x, tl_y, center),
-            self.coordinate_to_index(tl_x + 1, tl_y, center),
-            self.coordinate_to_index(tl_x, tl_y - 1, center),
-            self.coordinate_to_index(tl_x + 1, tl_y - 1, center),
-        ])
+        select_x_indexes.append(
+            [
+                self.coordinate_to_index(tl_x, tl_y, center),
+                self.coordinate_to_index(tl_x + 1, tl_y, center),
+                self.coordinate_to_index(tl_x, tl_y - 1, center),
+                self.coordinate_to_index(tl_x + 1, tl_y - 1, center),
+            ]
+        )
         weights.append(w)
 
     @abstractmethod
@@ -149,18 +151,27 @@ class CircleConv3x3(CircleLayerBase):
         dilation: int = 1,
         groups: int = 1,
         bias: bool = True,
-        padding_mode: str = 'zeros',
-        version: str = 'CircleConv3x3',
+        padding_mode: str = "zeros",
+        version: str = "CircleConv3x3",
     ) -> None:
-        super(CircleConv3x3, self).__init__(
-            in_channels, out_channels, kernel_size, stride, padding,
-            dilation, groups, bias, padding_mode, version,
+        super().__init__(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride,
+            padding,
+            dilation,
+            groups,
+            bias,
+            padding_mode,
+            version,
         )
         if self.kernel_size != 3 and self.kernel_size != 1:
             print("Kernel_size must be 1 or 3, %d was given" % kernel_size)
             raise NotImplementedError("Kernel_size must be 1 or 3")
         self.weight = Parameter(
-            torch.empty(out_channels, self.in_channel_group, self.kernel_size, self.kernel_size))
+            torch.empty(out_channels, self.in_channel_group, self.kernel_size, self.kernel_size)
+        )
         self.init_weights()
         if self.kernel_size != 1:
             w_transform_matrix: Tensor = self.get_w_transform_matrix()
@@ -173,7 +184,9 @@ class CircleConv3x3(CircleLayerBase):
             w = w.view(-1, self.kernel_size * self.kernel_size)
             w = w.matmul(self.w_transform_matrix)
         w = w.view(w_size[0], w_size[1], self.kernel_size, self.kernel_size)
-        return nn.functional.conv2d(x, w, self.bias, self.stride, self.padding, self.dilation, groups=self.groups)
+        return nn.functional.conv2d(
+            x, w, self.bias, self.stride, self.padding, self.dilation, groups=self.groups
+        )
 
     def init_bilinear_weights(self) -> tuple[NDArray[np.float64], list[list[int]]]:
         select_x_indexes: list[list[int]] = []
@@ -186,13 +199,17 @@ class CircleConv3x3(CircleLayerBase):
                     continue
                 dist_to_center: float = np.sqrt(np.power(grid_x, 2) + np.power(grid_y, 2))
                 angle: float = np.arctan(np.abs(grid_y / grid_x))
-                self.append_a_weight(angle, grid_x, grid_y, center, select_x_indexes, weights, dist_to_center)
+                self.append_a_weight(
+                    angle, grid_x, grid_y, center, select_x_indexes, weights, dist_to_center
+                )
 
         return np.array(weights), select_x_indexes
 
 
 class DoubleCircleConv(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, mid_channels: int | None = None) -> None:
+    def __init__(
+        self, in_channels: int, out_channels: int, mid_channels: int | None = None
+    ) -> None:
         super().__init__()
         if not mid_channels:
             mid_channels = out_channels
@@ -202,7 +219,7 @@ class DoubleCircleConv(nn.Module):
             nn.ReLU(inplace=True),
             CircleConv3x3(mid_channels, out_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -213,8 +230,7 @@ class CircleDown(nn.Module):
     def __init__(self, in_channels: int, out_channels: int) -> None:
         super().__init__()
         self.maxpool_conv = nn.Sequential(
-            nn.MaxPool2d(2),
-            DoubleCircleConv(in_channels, out_channels)
+            nn.MaxPool2d(2), DoubleCircleConv(in_channels, out_channels)
         )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -225,7 +241,7 @@ class CircleUp(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, bilinear: bool = True) -> None:
         super().__init__()
         if bilinear:
-            self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=True)
             self.conv = DoubleCircleConv(in_channels, out_channels, in_channels)
         else:
             self.up = nn.ConvTranspose2d(in_channels, in_channels // 2, kernel_size=2, stride=2)
@@ -268,14 +284,16 @@ class CircleNet(nn.Module):
         x = self.up4(x, x1)
         logits: Tensor = self.outc(x)
         return logits
-    
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import time
+
     from torchinfo import summary
+
     from burn_emulator.constants import DEFAULT_DTYPE
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}, dtype: {DEFAULT_DTYPE}")
 
     B, GRID = 16, 128
@@ -292,30 +310,40 @@ if __name__ == '__main__':
     print("\nParameter breakdown:")
     total = sum(p.numel() for p in model.parameters())
     for name, module in [
-        ('inc',   model.inc),
-        ('down1', model.down1),
-        ('down2', model.down2),
-        ('down3', model.down3),
-        ('down4', model.down4),
-        ('up1',   model.up1),
-        ('up2',   model.up2),
-        ('up3',   model.up3),
-        ('up4',   model.up4),
-        ('outc',  model.outc),
+        ("inc", model.inc),
+        ("down1", model.down1),
+        ("down2", model.down2),
+        ("down3", model.down3),
+        ("down4", model.down4),
+        ("up1", model.up1),
+        ("up2", model.up2),
+        ("up3", model.up3),
+        ("up4", model.up4),
+        ("outc", model.outc),
     ]:
         params = sum(p.numel() for p in module.parameters())
         print(f"  {name:<6} : {params:>10,}")
     print(f"  {'Total':<6} : {total:>10,}")
 
     model.eval()
-    summary(model, input_size=(B, C_in, GRID, GRID), device=device,
-            col_names=["input_size", "output_size", "num_params"],
-            depth=3, mode='eval', verbose=1)
+    summary(
+        model,
+        input_size=(B, C_in, GRID, GRID),
+        device=device,
+        col_names=["input_size", "output_size", "num_params"],
+        depth=3,
+        mode="eval",
+        verbose=1,
+    )
 
     model.to(DEFAULT_DTYPE)
     image = torch.zeros(B, C_in, GRID, GRID, device=device, dtype=DEFAULT_DTYPE)
-    image[:, 0] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(DEFAULT_DTYPE) * 0.731  # flow_x
-    image[:, 1] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(DEFAULT_DTYPE) * 0.731  # flow_y
+    image[:, 0] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(
+        DEFAULT_DTYPE
+    ) * 0.731  # flow_x
+    image[:, 1] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(
+        DEFAULT_DTYPE
+    ) * 0.731  # flow_y
     image[:, 2:] = torch.rand(B, C_in - 2, GRID, GRID, device=device).to(DEFAULT_DTYPE)
 
     # warmup
@@ -332,13 +360,13 @@ if __name__ == '__main__':
     if torch.cuda.is_available():
         torch.cuda.synchronize()
     t1 = time.perf_counter()
-    
+
     if torch.cuda.is_available():
-        peak      = torch.cuda.max_memory_allocated(device) / 1024**3
-        reserved  = torch.cuda.memory_reserved(device) / 1024**3
+        peak = torch.cuda.max_memory_allocated(device) / 1024**3
+        reserved = torch.cuda.memory_reserved(device) / 1024**3
         total_mem = torch.cuda.get_device_properties(device).total_memory / 1024**3
 
-        print(f"\nMemory (GiB):")
+        print("\nMemory (GiB):")
         print(f"  peak      : {peak:.2f}")
         print(f"  reserved  : {reserved:.2f}")
         print(f"  total     : {total_mem:.2f}")
@@ -349,9 +377,11 @@ if __name__ == '__main__':
         )
     else:
         print("\nMemory check skipped (CPU)")
-        
+
     elapsed = (t1 - t0) / N_RUNS
-    print(f"\nForward pass : {elapsed*1000:.1f} ms  (mean over {N_RUNS} runs for batch size = {B})")
+    print(
+        f"\nForward pass : {elapsed * 1000:.1f} ms  (mean over {N_RUNS} runs for batch size = {B})"
+    )
 
     print(f"Input  : ({B}, {C_in}, {GRID}, {GRID})")
     print(f"Output : {tuple(pred.shape)}")

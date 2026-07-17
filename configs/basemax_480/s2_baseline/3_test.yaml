@@ -1,7 +1,7 @@
 dataset:
     class_path: burn_emulator.datasets.IgnitionDataset
     init_args:
-        ignitions_path: data/s2/outputs/3_baseline/3_ignitions_locations.csv
+        ignitions_path: data/PS_scenarios/s2/outputs/3_baseline/3_ignitions_locations.csv
         fuels_paths:
             -  data/legalmax_baseline_FF_20260624
         burn_paths:
@@ -11,5 +11,5 @@ dataset:
         burn_times: [480]
         chip_size: 128
         jitter: null
-        ignition_only: true
+
 test_name: 3_baseline

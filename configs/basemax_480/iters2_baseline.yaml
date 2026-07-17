@@ -10,7 +10,7 @@ dataset:
         burn_times: [480]
         chip_size: 128
         jitter: null
-        ignition_only: true
+
 test_name: baseline
 num_iterations: 30
 num_scenarios: 10

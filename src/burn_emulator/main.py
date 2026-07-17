@@ -1,20 +1,20 @@
 import argparse
+
 import yaml
 
-from burn_emulator.constants import Path, methods
+from burn_emulator.constants import METHODS, Path
 from burn_emulator.package import package
 from burn_emulator.run import run
-from burn_emulator.train import train
 from burn_emulator.test import test, test_iterations
-from burn_emulator.utils import read_gcs_blob
+from burn_emulator.train import train
 
 
 def main():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("-m", "--method", default="train", choices=METHODS)
     parser.add_argument("-C", "--config_dir", action="store", required=False)
-    parser.add_argument("-c", "--config", action="append", required=False)
-    parser.add_argument("-g", "--gonfig", action="append", required=False)
+    parser.add_argument("-c", "--config", action="append", required=False, default=[])
+    parser.add_argument("-g", "--gonfig", action="append", required=False, default=[])
     parser.add_argument("-p", "--ckpt_path", action="store", required=False)
     parser.add_argument("-b", "--bucket", action="store", default="")
     args = parser.parse_args()
@@ -45,9 +45,9 @@ def main():
             test(**configs)
         case "test_iterations":
             test_iterations(**configs)
-        case "package"
+        case "package":
             package(config_files, **configs)
-        case run(**configs)
+        case "run":
             run(**configs)
 
 if __name__ == "__main__":

@@ -20,12 +20,12 @@ def build_radial_graph(
     # get coordinates
     ys = torch.arange(H, dtype=torch.float)
     xs = torch.arange(W, dtype=torch.float)
-    grid_y, grid_x = torch.meshgrid(ys, xs, indexing='ij')
+    grid_y, grid_x = torch.meshgrid(ys, xs, indexing="ij")
     pos = torch.stack([grid_x.reshape(-1), grid_y.reshape(-1)], dim=1)  # (N, 2)
 
     # assign rings to coords
     cx = cy = (grid_size - 1) / 2.0
-    max_dist = (cx ** 2 + cy ** 2) ** 0.5
+    max_dist = (cx**2 + cy**2) ** 0.5
     dist = ((pos[:, 0] - cx) ** 2 + (pos[:, 1] - cy) ** 2).sqrt()
     ring_id = (dist / max_dist * num_rings).long().clamp(0, num_rings - 1)
 
@@ -40,26 +40,28 @@ def build_radial_graph(
     centre_idx = dist.argmin().item()
 
     same_src_t, same_dst_t = [], []
-    out_src_t,  out_dst_t  = [], []
+    out_src_t, out_dst_t = [], []
 
     if grid_outward:
         # get 8 neighbor edges filter to only outward directed edges
-        offsets_8 = [(dy, dx) for dy in [-1, 0, 1] for dx in [-1, 0, 1] if not (dy == 0 and dx == 0)]
+        offsets_8 = [
+            (dy, dx) for dy in [-1, 0, 1] for dx in [-1, 0, 1] if not (dy == 0 and dx == 0)
+        ]
         for dy, dx in offsets_8:
             sy = slice(max(0, -dy), H + min(0, -dy))
             sx = slice(max(0, -dx), W + min(0, -dx))
-            ty = slice(max(0,  dy), H + min(0,  dy))
-            tx = slice(max(0,  dx), W + min(0,  dx))
+            ty = slice(max(0, dy), H + min(0, dy))
+            tx = slice(max(0, dx), W + min(0, dx))
             a = idx[sy, sx].reshape(-1)
             b = idx[ty, tx].reshape(-1)
             ra, rb = ring_id[a], ring_id[b]
-            same  = ra == rb
+            same = ra == rb
             a_out = ra < rb
             b_out = rb < ra
             same_src_t += [a[same], b[same]]
             same_dst_t += [b[same], a[same]]
-            out_src_t  += [a[a_out], b[b_out]]
-            out_dst_t  += [b[a_out], a[b_out]]
+            out_src_t += [a[a_out], b[b_out]]
+            out_dst_t += [b[a_out], a[b_out]]
         # Explicitly connect centre pixel to all ring-1 pixels
         ring1 = torch.where(ring_id == 1)[0]
         if ring1.numel() > 0:
@@ -88,7 +90,7 @@ def build_radial_graph(
             dst_nodes = torch.where(ring_id == r + 1)[0]
             if src_nodes.numel() == 0 or dst_nodes.numel() == 0:
                 continue
-            
+
             # filter to density of src nodes
             k_src = max(1, int(src_nodes.numel() * src_ratio))
             src_perm = torch.randperm(src_nodes.numel(), generator=gen)[:k_src]
@@ -100,10 +102,10 @@ def build_radial_graph(
                 # find potential dst within ring_width*2
                 src_p = pos[s]
                 d = ((dst_pos_all - src_p) ** 2).sum(dim=1).sqrt()
-                nearby = dst_nodes[d <= ring_width*2]
+                nearby = dst_nodes[d <= ring_width * 2]
                 if nearby.numel() == 0:
                     continue
-                
+
                 # append edge and add to selection for distal edge
                 k_dst = min(n_dst, nearby.numel())
                 dst_perm = torch.randperm(nearby.numel(), generator=gen)[:k_dst]
@@ -116,12 +118,12 @@ def build_radial_graph(
             for d_idx in selected_dsts:
                 d_pos = pos[d_idx]
                 d2 = ((dst_pos_all - d_pos) ** 2).sum(dim=1).sqrt()
-                nearby_same = dst_nodes[(d2 > 0) & (d2 <= ring_width*2)]
+                nearby_same = dst_nodes[(d2 > 0) & (d2 <= ring_width * 2)]
                 if nearby_same.numel() == 0:
                     continue
                 # take n_neighbors nearest
                 k_nb = min(n_neighbors, nearby_same.numel())
-                nb_d = d2[(d2 > 0) & (d2 <= ring_width*2)]
+                nb_d = d2[(d2 > 0) & (d2 <= ring_width * 2)]
                 neighbours = nearby_same[nb_d.argsort()[:k_nb]]
                 n = neighbours.numel()
                 seeded_same_src += [torch.full((n,), d_idx, dtype=torch.long), neighbours]
@@ -137,10 +139,16 @@ def build_radial_graph(
     out_src = torch.cat(out_src_t) if out_src_t else torch.empty(0, dtype=torch.long)
     out_dst = torch.cat(out_dst_t) if out_dst_t else torch.empty(0, dtype=torch.long)
 
-    same_edge_index = torch.unique(torch.stack([same_src, same_dst], dim=0), dim=1) \
-        if same_src.numel() > 0 else torch.empty(2, 0, dtype=torch.long)
-    out_edge_index  = torch.unique(torch.stack([out_src,  out_dst],  dim=0), dim=1) \
-        if out_src.numel() > 0 else torch.empty(2, 0, dtype=torch.long)
+    same_edge_index = (
+        torch.unique(torch.stack([same_src, same_dst], dim=0), dim=1)
+        if same_src.numel() > 0
+        else torch.empty(2, 0, dtype=torch.long)
+    )
+    out_edge_index = (
+        torch.unique(torch.stack([out_src, out_dst], dim=0), dim=1)
+        if out_src.numel() > 0
+        else torch.empty(2, 0, dtype=torch.long)
+    )
 
     return Data(
         x=x_pos,
@@ -155,23 +163,23 @@ def build_radial_graph(
 def batch_edge_index(edge_index: torch.Tensor, N: int, B: int) -> torch.Tensor:
     offsets = torch.arange(B, device=edge_index.device) * N
     ei = edge_index.unsqueeze(0) + offsets.reshape(B, 1, 1)  # (B, 2, E)
-    return ei.permute(1, 0, 2).reshape(2, -1)                 # (2, B*E)
+    return ei.permute(1, 0, 2).reshape(2, -1)  # (2, B*E)
 
 
 def sample_image(image: torch.Tensor, pos: torch.Tensor, grid_size: int = 128):
     B, C, H, W = image.shape
     norm = (pos / (grid_size - 1)) * 2.0 - 1.0
     grid = norm.unsqueeze(0).unsqueeze(0).expand(B, 1, -1, 2)
-    out = F.grid_sample(image, grid, mode='bilinear', padding_mode='border', align_corners=True)
+    out = F.grid_sample(image, grid, mode="bilinear", padding_mode="border", align_corners=True)
     return out.squeeze(2).permute(0, 2, 1)  # (B, N, C)
 
 
 class RadialGNNLayer(MessagePassing):
     def __init__(self, in_ch: int, out_ch: int, num_rings: int, use_slope_gate: bool = True):
-        super().__init__(aggr='max')
+        super().__init__(aggr="max")
         self.num_rings = num_rings
         self.use_slope_gate = use_slope_gate
-        
+
         self.mlp = nn.Sequential(
             nn.Linear(2 * in_ch + 4, out_ch),
             nn.ReLU(),
@@ -235,61 +243,67 @@ class GNNBranch(nn.Module):
             n_dst=n_dst if n_dst is not None else 4,
             n_neighbors=n_neighbors if n_neighbors is not None else 2,
         )
-        
+
         # is this even necessary?
-        self.register_buffer('same_edge_index', graph.same_edge_index)
-        self.register_buffer('out_edge_index', graph.out_edge_index)
-        self.register_buffer('ring_id', graph.ring_id)
-        self.register_buffer('pos', graph.pos)
-        self.register_buffer('pos_feat', graph.x)
+        self.register_buffer("same_edge_index", graph.same_edge_index)
+        self.register_buffer("out_edge_index", graph.out_edge_index)
+        self.register_buffer("ring_id", graph.ring_id)
+        self.register_buffer("pos", graph.pos)
+        self.register_buffer("pos_feat", graph.x)
 
         # pre-tile edge index and node features for train_batch_size
         N = graph.pos.shape[0]
         ei_single = torch.cat([graph.same_edge_index, graph.out_edge_index], dim=1)
         ei_batched = batch_edge_index(ei_single, N, train_batch_size)
-        self.register_buffer('ei_batched', ei_batched)
+        self.register_buffer("ei_batched", ei_batched)
 
-        pos_feat_batched = graph.x.unsqueeze(0).expand(train_batch_size, -1, -1).reshape(train_batch_size * N, -1)
-        self.register_buffer('pos_feat_batched', pos_feat_batched)
+        pos_feat_batched = (
+            graph.x.unsqueeze(0).expand(train_batch_size, -1, -1).reshape(train_batch_size * N, -1)
+        )
+        self.register_buffer("pos_feat_batched", pos_feat_batched)
 
         # pre-compute normalised edge direction vectors (fixed per graph)
         src, dst = ei_single
         edge_dx = graph.pos[dst, 0] - graph.pos[src, 0]
         edge_dy = graph.pos[dst, 1] - graph.pos[src, 1]
-        edge_len = (edge_dx ** 2 + edge_dy ** 2).sqrt().clamp(min=1e-6)
-        self.register_buffer('edge_dx_norm',     edge_dx / edge_len)   # src->dst unit vector x
-        self.register_buffer('edge_dy_norm',     edge_dy / edge_len)   # src->dst unit vector y
+        edge_len = (edge_dx**2 + edge_dy**2).sqrt().clamp(min=1e-6)
+        self.register_buffer("edge_dx_norm", edge_dx / edge_len)  # src->dst unit vector x
+        self.register_buffer("edge_dy_norm", edge_dy / edge_len)  # src->dst unit vector y
 
         # separate projections for continuous and one-hot channels from burn_emulator:
         #   ch0-1 : flow_x, flow_y  (continuous)
         #   ch2-5 : 4 continuous variables
         #   ch6-18 : 13 one-hot class channels
         # pos_feat adds 3 more continuous dims (norm_r, norm_dx, norm_dy)
-        n_cont  = (img_channels - 13) + 3   # flow + continuous + pos features
+        n_cont = (img_channels - 13) + 3  # flow + continuous + pos features
         n_class = 13
-        self.cont_proj  = nn.Linear(n_cont,  hidden_channels // 2)
+        self.cont_proj = nn.Linear(n_cont, hidden_channels // 2)
         self.class_proj = nn.Linear(n_class, hidden_channels // 2)
-        self.layers = nn.ModuleList([
-            RadialGNNLayer(hidden_channels, hidden_channels, num_rings, use_slope_gate=use_slope_gate)
-            for _ in range(num_layers)
-        ])
+        self.layers = nn.ModuleList(
+            [
+                RadialGNNLayer(
+                    hidden_channels, hidden_channels, num_rings, use_slope_gate=use_slope_gate
+                )
+                for _ in range(num_layers)
+            ]
+        )
 
     def forward(self, feats_flat: torch.Tensor, B: int, missing_flat: torch.Tensor) -> torch.Tensor:
         N = self.pos.shape[0]
         dtype = feats_flat.dtype
 
         # use pre-tiled buffers if B matches train_batch_size, else compute on the fly
-        if B == self.train_batch_size:
-            ei_batch   = self.ei_batched
+        if self.train_batch_size == B:
+            ei_batch = self.ei_batched
             pos_feat_t = self.pos_feat_batched.to(dtype)
         else:
-            ei_single  = torch.cat([self.same_edge_index, self.out_edge_index], dim=1)
-            ei_batch   = batch_edge_index(ei_single, N, B)
+            ei_single = torch.cat([self.same_edge_index, self.out_edge_index], dim=1)
+            ei_batch = batch_edge_index(ei_single, N, B)
             pos_feat_t = self.pos_feat.unsqueeze(0).expand(B, -1, -1).reshape(B * N, -1).to(dtype)
 
         # filter edges touching missing pixels
         src, dst = ei_batch
-        valid    = ~missing_flat[src] & ~missing_flat[dst]
+        valid = ~missing_flat[src] & ~missing_flat[dst]
         ei_batch = ei_batch[:, valid]
 
         E_single = self.edge_dx_norm.shape[0]
@@ -299,10 +313,14 @@ class GNNBranch(nn.Module):
             E_same = self.same_edge_index.shape[1]
             edge_local = ei_batch[0] % E_single
             is_lateral = edge_local < E_same
-            keep_lat = torch.rand(is_lateral.sum(),  device=ei_batch.device) > self.lateral_edge_dropout
-            keep_out = torch.rand((~is_lateral).sum(), device=ei_batch.device) > self.outward_edge_dropout
+            keep_lat = (
+                torch.rand(is_lateral.sum(), device=ei_batch.device) > self.lateral_edge_dropout
+            )
+            keep_out = (
+                torch.rand((~is_lateral).sum(), device=ei_batch.device) > self.outward_edge_dropout
+            )
             keep = torch.empty(ei_batch.shape[1], dtype=torch.bool, device=ei_batch.device)
-            keep[is_lateral]  = keep_lat
+            keep[is_lateral] = keep_lat
             keep[~is_lateral] = keep_out
             ei_batch = ei_batch[:, keep]
 
@@ -314,17 +332,21 @@ class GNNBranch(nn.Module):
         fy_src = feats_flat[src_v, 1].float()
         fx_dst = feats_flat[dst_v, 0].float()
         fy_dst = feats_flat[dst_v, 1].float()
-        
+
         # t_align_src: how much is this edge going uphill from src's perspective
-        t_align_src = (-(fx_src * self.edge_dx_norm[edge_local] + fy_src * self.edge_dy_norm[edge_local])).to(dtype)
+        t_align_src = (
+            -(fx_src * self.edge_dx_norm[edge_local] + fy_src * self.edge_dy_norm[edge_local])
+        ).to(dtype)
         # t_align_dst: how much is the edge arriving uphill at dst (same direction, dst flow)
-        t_align_dst = (-(fx_dst * self.edge_dx_norm[edge_local] + fy_dst * self.edge_dy_norm[edge_local])).to(dtype)
+        t_align_dst = (
+            -(fx_dst * self.edge_dx_norm[edge_local] + fy_dst * self.edge_dy_norm[edge_local])
+        ).to(dtype)
 
         # ring_id tiled to (B*N,) for use in layer forward
         ring_id_long = self.ring_id.unsqueeze(0).expand(B, -1).reshape(-1).to(dtype)
 
         # projecting continuous variables and one-hot variables separately
-        h_cont = F.relu(self.cont_proj( torch.cat([feats_flat[:, :-13], pos_feat_t], dim=1)))
+        h_cont = F.relu(self.cont_proj(torch.cat([feats_flat[:, :-13], pos_feat_t], dim=1)))
         h_class = F.relu(self.class_proj(feats_flat[:, -13:]))
         h = torch.cat([h_cont, h_class], dim=1)
 
@@ -378,31 +400,45 @@ class RadialGNN(nn.Module):
         super().__init__()
         self.grid_size = grid_size
 
-        assert len(ring_scales) == len(num_layers) == len(grid_outward) \
-            == len(src_ratio) == len(n_dst) == len(n_neighbors) == len(use_slope_gate), \
-            "all branch tuples must have the same length"
+        assert (
+            len(ring_scales)
+            == len(num_layers)
+            == len(grid_outward)
+            == len(src_ratio)
+            == len(n_dst)
+            == len(n_neighbors)
+            == len(use_slope_gate)
+        ), "all branch tuples must have the same length"
 
-        self.branches = nn.ModuleList([
-            GNNBranch(
-                num_rings=nr,
-                img_channels=img_channels,
-                hidden_channels=hidden_channels,
-                num_layers=nl,
-                dropout=dropout,
-                grid_size=grid_size,
-                train_batch_size=train_batch_size,
-                grid_outward=gout,
-                src_ratio=sr,
-                n_dst=nd,
-                n_neighbors=nn,
-                lateral_edge_dropout=lateral_edge_dropout,
-                outward_edge_dropout=outward_edge_dropout,
-                use_slope_gate=usg,
-            )
-            for nr, nl, gout, sr, nd, nn, usg in zip(
-                ring_scales, num_layers, grid_outward, src_ratio, n_dst, n_neighbors, use_slope_gate
-            )
-        ])
+        self.branches = nn.ModuleList(
+            [
+                GNNBranch(
+                    num_rings=nr,
+                    img_channels=img_channels,
+                    hidden_channels=hidden_channels,
+                    num_layers=nl,
+                    dropout=dropout,
+                    grid_size=grid_size,
+                    train_batch_size=train_batch_size,
+                    grid_outward=gout,
+                    src_ratio=sr,
+                    n_dst=nd,
+                    n_neighbors=nn,
+                    lateral_edge_dropout=lateral_edge_dropout,
+                    outward_edge_dropout=outward_edge_dropout,
+                    use_slope_gate=usg,
+                )
+                for nr, nl, gout, sr, nd, nn, usg in zip(
+                    ring_scales,
+                    num_layers,
+                    grid_outward,
+                    src_ratio,
+                    n_dst,
+                    n_neighbors,
+                    use_slope_gate,
+                )
+            ]
+        )
 
         self.scale_proj = nn.Linear(hidden_channels * len(ring_scales), hidden_channels)
         self.decoder = PixelDecoder(hidden_channels, grid_size, refine_ch)
@@ -427,12 +463,14 @@ class RadialGNN(nn.Module):
         return self.decoder(h, B)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import time
+
     from torchinfo import summary
+
     from burn_emulator.constants import DEFAULT_DTYPE
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}, dtype: {DEFAULT_DTYPE}")
 
     B, GRID = 16, 128
@@ -459,11 +497,13 @@ if __name__ == '__main__':
 
     for i, branch in enumerate(model.branches):
         E_same = branch.same_edge_index.shape[1]
-        E_out  = branch.out_edge_index.shape[1]
-        src_r  = branch.ring_id[branch.out_edge_index[0]]
-        dst_r  = branch.ring_id[branch.out_edge_index[1]]
+        E_out = branch.out_edge_index.shape[1]
+        src_r = branch.ring_id[branch.out_edge_index[0]]
+        dst_r = branch.ring_id[branch.out_edge_index[1]]
         inward = (dst_r < src_r).sum().item()
-        print(f"  Branch {i} rings={branch.num_rings:2d} : same={E_same}, outward={E_out}, inward={inward} <- 0")
+        print(
+            f"  Branch {i} rings={branch.num_rings:2d} : same={E_same}, outward={E_out}, inward={inward} <- 0"
+        )
 
     print("\nParameter breakdown:")
     total = sum(p.numel() for p in model.parameters())
@@ -475,14 +515,24 @@ if __name__ == '__main__':
     print(f" Total : {total:>10,}")
 
     model.eval()
-    summary(model, input_size=(B, C_in, GRID, GRID), device=device,
-            col_names=["input_size", "output_size", "num_params"],
-            depth=3, mode='eval', verbose=1)
+    summary(
+        model,
+        input_size=(B, C_in, GRID, GRID),
+        device=device,
+        col_names=["input_size", "output_size", "num_params"],
+        depth=3,
+        mode="eval",
+        verbose=1,
+    )
 
     model.to(DEFAULT_DTYPE)
     image = torch.zeros(B, C_in, GRID, GRID, device=device, dtype=DEFAULT_DTYPE)
-    image[:, 0] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(DEFAULT_DTYPE) * 0.731  # flow_x
-    image[:, 1] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(DEFAULT_DTYPE) * 0.731  # flow_y
+    image[:, 0] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(
+        DEFAULT_DTYPE
+    ) * 0.731  # flow_x
+    image[:, 1] = (torch.rand(B, GRID, GRID, device=device) * 2 - 1).to(
+        DEFAULT_DTYPE
+    ) * 0.731  # flow_y
     image[:, 2:] = torch.rand(B, C_in - 2, GRID, GRID, device=device).to(DEFAULT_DTYPE)
 
     # warmup
@@ -500,13 +550,13 @@ if __name__ == '__main__':
     if torch.cuda.is_available():
         torch.cuda.synchronize()
     t1 = time.perf_counter()
-        
+
     if torch.cuda.is_available():
-        peak      = torch.cuda.max_memory_allocated(device) / 1024**3
-        reserved  = torch.cuda.memory_reserved(device) / 1024**3
+        peak = torch.cuda.max_memory_allocated(device) / 1024**3
+        reserved = torch.cuda.memory_reserved(device) / 1024**3
         total_mem = torch.cuda.get_device_properties(device).total_memory / 1024**3
 
-        print(f"\nMemory (GiB):")
+        print("\nMemory (GiB):")
         print(f"  peak      : {peak:.2f}")
         print(f"  reserved  : {reserved:.2f}")
         print(f"  total     : {total_mem:.2f}")
@@ -517,9 +567,11 @@ if __name__ == '__main__':
         )
     else:
         print("\nMemory check skipped (CPU)")
-    
+
     elapsed = (t1 - t0) / N_RUNS
-    print(f"\nForward pass : {elapsed*1000:.1f} ms  (mean over {N_RUNS} runs for batch size = {B})")
+    print(
+        f"\nForward pass : {elapsed * 1000:.1f} ms  (mean over {N_RUNS} runs for batch size = {B})"
+    )
 
     print(f"Input : ({B}, {C_in}, {GRID}, {GRID})")
     print(f"Output : {tuple(pred.shape)}")

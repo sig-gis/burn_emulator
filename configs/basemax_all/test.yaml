@@ -5,5 +5,3 @@ dataloader:
         shuffle: false
         pin_memory: true
         drop_last: false
-num_sims: 1
-monte_carlo: false
